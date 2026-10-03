@@ -99,12 +99,23 @@ def motor_file_carving(caminho_imagem, pasta_saida):
         print(f"[Erro Crítico] Ocorreu uma falha inesperada: {e}")
 
 # ==============================================================================
-# PONTO DE ENTRADA DO PROGRAMA
+# PONTO DE ENTRADA DO PROGRAMA (MODO INTERATIVO)
 # ==============================================================================
 if __name__ == "__main__":
-    # Quando quiser usar a sério no futuro, basta mudar estas duas variáveis:
-    ALVO = "disco_corrompido.img" # Mude para o caminho da pen/disco clonado (ex: "/dev/rdisk2")
-    DESTINO = "./dados_recuperados" # Onde quer que os ficheiros salvos apareçam
+    print("=====================================================")
+    print("    SISTEMA DE RECUPERAÇÃO DE DADOS (FILE CARVING)   ")
+    print("=====================================================")
     
-    motor_file_carving(ALVO, DESTINO)
-    print("\n[*] Processo concluído.")
+    # O programa agora pergunta qual é o alvo e onde guardar!
+    alvo_escolhido = input("\n👉 Arraste o ficheiro de imagem (.img) para aqui ou escreva o caminho: ").strip()
+    
+    # Remove aspas caso o utilizador arraste o ficheiro no Mac
+    alvo_escolhido = alvo_escolhido.replace("'", "").replace('"', "")
+    
+    destino_escolhido = "./dados_recuperados"
+    
+    if alvo_escolhido:
+        motor_file_carving(alvo_escolhido, destino_escolhido)
+        print("\n[*] Processo concluído.")
+    else:
+        print("[!] Erro: Não introduziu nenhum caminho.")
