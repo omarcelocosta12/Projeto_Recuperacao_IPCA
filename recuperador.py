@@ -1,54 +1,61 @@
 import os
 import mmap
+import subprocess
+import time
 
 # ==============================================================================
 # MOTOR FORENSE DE FILE CARVING (Recuperação de Dados em Modo Read-Only)
 # Projeto: Segurança e Proteção de Dados para Sistemas de Informação (IPCA)
 # ==============================================================================
 
-# Limite de segurança: 50 MB por ficheiro. 
-# Previne o esgotamento de disco em caso de ficheiros corrompidos ou falsos positivos.
 TAMANHO_MAXIMO_BYTES = 50 * 1024 * 1024  
 
-# Dicionário de Magic Numbers (Assinaturas Hexadecimais)
 ASSINATURAS = {
-    "jpg": { 
-        "inicio": b'\xff\xd8\xff', 
-        "fim": b'\xff\xd9',
-        "tamanho_marcador_fim": 2
-    },
-    "png": { 
-        "inicio": b'\x89PNG\r\n\x1a\n', 
-        "fim": b'IEND\xaeB`\x82',
-        "tamanho_marcador_fim": 8
-    },
-    "pdf": { 
-        "inicio": b'%PDF-', 
-        "fim": b'%%EOF',
-        "tamanho_marcador_fim": 5
-    },
-    # Documentos Word (.docx), Excel (.xlsx) e PowerPoint (.pptx) usam a estrutura ZIP
-    "zip_office": { 
-        "inicio": b'PK\x03\x04', 
-        "fim": b'PK\x05\x06',
-        "tamanho_marcador_fim": 22 # O marcador End of Central Directory tem 22 bytes no total
-    }
+    "jpg": { "inicio": b'\xff\xd8\xff', "fim": b'\xff\xd9', "tamanho_marcador_fim": 2 },
+    "png": { "inicio": b'\x89PNG\r\n\x1a\n', "fim": b'IEND\xaeB`\x82', "tamanho_marcador_fim": 8 },
+    "pdf": { "inicio": b'%PDF-', "fim": b'%%EOF', "tamanho_marcador_fim": 5 },
+    "zip_office": { "inicio": b'PK\x03\x04', "fim": b'PK\x05\x06', "tamanho_marcador_fim": 22 },
+    "mp4": { "inicio": b'ftyp', "fim": None, "tamanho_marcador_fim": 0 } # Suporte a Blind Carving
 }
+
+def criar_imagem_forense(dispositivo, caminho_imagem):
+    """
+    Usa o comando 'dd' do macOS para clonar o disco antes da análise.
+    """
+    print(f"\n[*] FASE 1: Aquisição de Prova (Criar Clone)")
+    print(f"[-] A ler o dispositivo: {dispositivo}")
+    print(f"[-] A criar imagem forense em: {caminho_imagem}")
+    print(f"    (Isto pode demorar alguns minutos. Por favor, aguarde...)")
+    
+    # O Python chama o terminal para executar o comando 'dd'
+    comando = f"sudo dd if={dispositivo} of={caminho_imagem} bs=1m"
+    
+    inicio_tempo = time.time()
+    
+    try:
+        # Pede a password do sistema (sudo) se necessário
+        processo = subprocess.run(comando, shell=True, check=True, text=True, stderr=subprocess.PIPE)
+        
+        tempo_total = round(time.time() - inicio_tempo, 2)
+        print(f"\n[+] Aquisição concluída com sucesso em {tempo_total} segundos!")
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        print(f"\n[Erro] Falha ao criar a imagem do disco.")
+        print(f"Detalhes do sistema: {e.stderr}")
+        return False
 
 def motor_file_carving(caminho_imagem, pasta_saida):
     """
     Analisa uma imagem de disco bit a bit e extrai ficheiros com base nas suas assinaturas.
     """
-    print(f"\n[*] A iniciar o motor forense de File Carving...")
+    print(f"\n[*] FASE 2: Motor Forense de File Carving...")
     print(f"[*] Alvo: {caminho_imagem}\n")
     
     os.makedirs(pasta_saida, exist_ok=True)
         
     try:
-        # Abertura em modo binário estrito
         with open(caminho_imagem, "rb") as disco:
-            
-            # Mapeamento de memória (mmap) para não sobrecarregar a RAM (Access Read = Read Only)
             with mmap.mmap(disco.fileno(), length=0, access=mmap.ACCESS_READ) as disco_virtual:
                 
                 for extensao, marcadores in ASSINATURAS.items():
@@ -58,43 +65,45 @@ def motor_file_carving(caminho_imagem, pasta_saida):
                     recuperados = 0
                     
                     while True:
-                        # 1. Procurar o byte de início
                         inicio_idx = disco_virtual.find(marcadores["inicio"], cursor)
                         if inicio_idx == -1:
-                            break # Fim da procura para este formato
+                            break 
                             
-                        # 2. Procurar o byte de fim
-                        fim_idx = disco_virtual.find(marcadores["fim"], inicio_idx)
+                        if marcadores["inicio"] == b'ftyp':
+                            inicio_idx = max(0, inicio_idx - 4)
+                            
+                        if marcadores["fim"] is None:
+                            fim_idx = min(inicio_idx + TAMANHO_MAXIMO_BYTES, len(disco_virtual))
+                        else:
+                            fim_idx = disco_virtual.find(marcadores["fim"], inicio_idx)
                         
-                        # Validações Forenses de Segurança
                         if fim_idx == -1:
-                            # Ficheiro incompleto, avançar o cursor para evitar loops
                             cursor = inicio_idx + len(marcadores["inicio"])
                             continue
                             
-                        # Ajustar o fim para incluir os próprios bytes do marcador de encerramento
-                        fim_idx += marcadores["tamanho_marcador_fim"]
+                        if marcadores["fim"] is not None:
+                            fim_idx += marcadores["tamanho_marcador_fim"]
+                            
                         tamanho_ficheiro = fim_idx - inicio_idx
-                        
                         if tamanho_ficheiro > TAMANHO_MAXIMO_BYTES:
-                            # Ignorar extrações gigantes (provável lixo binário)
                             cursor = inicio_idx + len(marcadores["inicio"])
                             continue
                             
-                        # 3. Extração e gravação segura do ficheiro
                         nome_ficheiro = os.path.join(pasta_saida, f"recuperado_{recuperados}.{extensao}")
                         with open(nome_ficheiro, "wb") as f_saida:
                             f_saida.write(disco_virtual[inicio_idx:fim_idx])
                             
                         recuperados += 1
-                        cursor = fim_idx # Mover o cursor para a frente para a próxima procura
+                        
+                        if marcadores["fim"] is None:
+                            cursor = fim_idx
+                        else:
+                            cursor = fim_idx 
                         
                     print(f"    -> {recuperados} ficheiro(s) recuperado(s).")
 
     except FileNotFoundError:
-        print(f"[Erro] O ficheiro/disco '{caminho_imagem}' não foi encontrado.")
-    except PermissionError:
-        print("[Erro] Permissões insuficientes. Se estiver a ler um disco físico, use 'sudo'.")
+        print(f"[Erro] A imagem '{caminho_imagem}' não foi encontrada.")
     except Exception as e:
         print(f"[Erro Crítico] Ocorreu uma falha inesperada: {e}")
 
@@ -106,16 +115,27 @@ if __name__ == "__main__":
     print("    SISTEMA DE RECUPERAÇÃO DE DADOS (FILE CARVING)   ")
     print("=====================================================")
     
-    # O programa agora pergunta qual é o alvo e onde guardar!
-    alvo_escolhido = input("\n👉 Arraste o ficheiro de imagem (.img) para aqui ou escreva o caminho: ").strip()
+    print("\n[ DICA ] Para saber o identificador da pen, abra outro terminal e digite 'diskutil list'.")
+    print("         Exemplo de dispositivo no Mac: /dev/rdisk4")
     
-    # Remove aspas caso o utilizador arraste o ficheiro no Mac
-    alvo_escolhido = alvo_escolhido.replace("'", "").replace('"', "")
+    dispositivo_alvo = input("\n👉 Escreva o identificador do disco/pen que quer clonar e recuperar: ").strip()
     
-    destino_escolhido = "./dados_recuperados"
+    # O programa cria o clone (.img) na mesma pasta onde o código está
+    nome_imagem = "prova_forense_temp.img"
+    caminho_imagem_temp = os.path.join(os.path.dirname(os.path.abspath(__file__)), nome_imagem)
+    destino_escolhido = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dados_recuperados")
     
-    if alvo_escolhido:
-        motor_file_carving(alvo_escolhido, destino_escolhido)
-        print("\n[*] Processo concluído.")
+    if dispositivo_alvo:
+        print("\n[Aviso] Vai ser pedida a password do seu Mac para permitir a leitura física da pen.")
+        
+        # 1. Tentar criar o clone primeiro
+        sucesso_clone = criar_imagem_forense(dispositivo_alvo, caminho_imagem_temp)
+        
+        # 2. Se o clone for criado com sucesso, inicia a extração
+        if sucesso_clone:
+            motor_file_carving(caminho_imagem_temp, destino_escolhido)
+            print("\n[*] Processo completo concluído.")
+        else:
+            print("\n[!] A análise não prosseguiu porque falhou a criação da imagem do disco.")
     else:
-        print("[!] Erro: Não introduziu nenhum caminho.")
+        print("[!] Erro: Não introduziu nenhum identificador válido.")
