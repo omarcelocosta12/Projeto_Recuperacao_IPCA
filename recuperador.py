@@ -20,7 +20,6 @@ ASSINATURAS = {
     "mp4": { "inicio": b'ftyp', "fim": None, "tamanho_marcador_fim": 0 } 
 }
 
-# --- FUNÇÃO 1: Animação e Progresso ---
 def monitorizar_progresso(processo_dd, evento_conclusao):
     contador_ciclos = 0
     pos = 0
@@ -30,85 +29,69 @@ def monitorizar_progresso(processo_dd, evento_conclusao):
     while not evento_conclusao.is_set():
         trilho_antes = "=" * pos
         trilho_depois = "=" * (largura - pos)
-        
         texto_animado = f"\r    [{trilho_antes}🚜{trilho_depois}] A copiar dados brutos da pen... "
         sys.stdout.write(texto_animado)
         sys.stdout.flush()
         
         pos += direcao
-        if pos == largura or pos == 0:
-            direcao *= -1
+        if pos == largura or pos == 0: direcao *= -1
             
         if contador_ciclos % 50 == 0 and contador_ciclos > 0:
             if processo_dd.poll() is None:
-                try:
-                    subprocess.run(["sudo", "kill", "-29", str(processo_dd.pid)], 
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except Exception:
-                    pass
+                try: subprocess.run(["sudo", "kill", "-29", str(processo_dd.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except: pass
         
         contador_ciclos += 1
         time.sleep(0.1) 
 
-# --- FUNÇÃO 2: Criar a Cópia Física ---
 def criar_imagem_disco(dispositivo, caminho_imagem):
     print(f"\n[*] PASSO 1: Preparar o disco (Criar Cópia Segura)")
-    print(f"[-] A ler o dispositivo: {dispositivo}")
-    print(f"[-] Destino: {caminho_imagem}\n")
+    print(f"[-] A ler: {dispositivo}")
     
     comando = ["sudo", "dd", f"if={dispositivo}", f"of={caminho_imagem}", "bs=1m"]
     inicio_tempo = time.time()
     
     try:
         processo = subprocess.Popen(comando, stderr=subprocess.PIPE, text=True)
-        
         evento_conclusao = threading.Event()
-        monitor_thread = threading.Thread(target=monitorizar_progresso, args=(processo, evento_conclusao))
-        monitor_thread.daemon = True
-        monitor_thread.start()
+        threading.Thread(target=monitorizar_progresso, args=(processo, evento_conclusao), daemon=True).start()
 
         for linha in processo.stderr:
-            if "bytes transferred" in linha.lower() or "bytes copied" in linha.lower():
+            if "bytes" in linha.lower():
                 sys.stdout.write("\r" + " " * 70 + "\r")
                 print(f"    🟢 Progresso: {linha.strip()}")
 
         processo.wait()
-        
         evento_conclusao.set()
         sys.stdout.write("\r" + " " * 70 + "\r")
         sys.stdout.flush()
 
         if processo.returncode == 0:
-            tempo_total = round(time.time() - inicio_tempo, 2)
-            print(f"[+] Cópia concluída com sucesso em {tempo_total} segundos!")
+            print(f"[+] Cópia concluída em {round(time.time() - inicio_tempo, 2)} segundos!")
             return True
-        else:
-            print(f"\n[Erro] Falha ao criar a cópia do disco.")
-            return False
-
+        return False
     except KeyboardInterrupt:
-        print("\n\n[!] Processo cancelado pelo utilizador. A parar...")
         if 'evento_conclusao' in locals(): evento_conclusao.set()
         if 'processo' in locals(): processo.terminate()
         return False
     except Exception as e:
-        print(f"\n[Erro Crítico na Cópia]: {e}")
+        print(f"\n[Erro na Cópia]: {e}")
         return False
 
-# --- FUNÇÃO 3: Extrair os Ficheiros e Organizar em Subpastas ---
 def motor_recuperacao(caminho_imagem, pasta_saida):
-    print(f"\n[*] PASSO 2: Motor de Recuperação e Organização...")
-    print(f"[*] A analisar: {caminho_imagem}\n")
-    
+    print(f"\n[*] PASSO 2: Motor de Recuperação e Relatório...")
     os.makedirs(pasta_saida, exist_ok=True)
+    
+    bytes_recuperados_total = 0
+    estatisticas = {}
         
     try:
         with open(caminho_imagem, "rb") as disco:
             with mmap.mmap(disco.fileno(), length=0, access=mmap.ACCESS_READ) as disco_virtual:
+                tamanho_total = len(disco_virtual)
+                
                 for extensao, marcadores in ASSINATURAS.items():
-                    print(f"[-] A procurar ficheiros do tipo .{extensao.upper()}...")
-                    
-                    # Cria a subpasta específica para este formato (ex: dados_recuperados/PDF)
+                    print(f"[-] A procurar .{extensao.upper()}...")
                     subpasta = os.path.join(pasta_saida, extensao.upper())
                     os.makedirs(subpasta, exist_ok=True)
                     
@@ -135,25 +118,49 @@ def motor_recuperacao(caminho_imagem, pasta_saida):
                         if tamanho_ficheiro > TAMANHO_MAXIMO_BYTES:
                             cursor = inicio_idx + len(marcadores["inicio"]); continue
                             
-                        # Guarda o ficheiro DENTRO da subpasta correspondente
                         nome_ficheiro = os.path.join(subpasta, f"recuperado_{recuperados}.{extensao}")
                         with open(nome_ficheiro, "wb") as f_saida:
                             f_saida.write(disco_virtual[inicio_idx:fim_idx])
                             
+                        bytes_recuperados_total += tamanho_ficheiro
                         recuperados += 1
                         cursor = fim_idx 
                         
-                    print(f"    -> {recuperados} ficheiro(s) guardado(s) na pasta '{extensao.upper()}'.")
-    except FileNotFoundError: print(f"[Erro] A cópia '{caminho_imagem}' não foi encontrada.")
+                    estatisticas[extensao] = recuperados
+                    print(f"    -> {recuperados} guardados na pasta '{extensao.upper()}'.")
+                
+                # Gerar o Resumo de Dados Órfãos
+                bytes_orfaos = max(0, tamanho_total - bytes_recuperados_total)
+                mb_total = tamanho_total / (1024 * 1024)
+                mb_recup = bytes_recuperados_total / (1024 * 1024)
+                mb_orfaos = bytes_orfaos / (1024 * 1024)
+                
+                # Criar o ficheiro de relatório
+                caminho_relatorio = os.path.join(pasta_saida, "Relatorio_Recuperacao.txt")
+                with open(caminho_relatorio, "w", encoding="utf-8") as relatorio:
+                    relatorio.write("=========================================\n")
+                    relatorio.write("   RELATÓRIO DE RECUPERAÇÃO DE DADOS\n")
+                    relatorio.write("=========================================\n\n")
+                    relatorio.write(f"Tamanho total da imagem analisada: {mb_total:.2f} MB\n")
+                    relatorio.write(f"Dados úteis reconhecidos e extraídos: {mb_recup:.2f} MB\n")
+                    relatorio.write(f"DADOS ÓRFÃOS (Espaço vazio ou não reconhecido): {mb_orfaos:.2f} MB\n\n")
+                    relatorio.write("Ficheiros recuperados por formato:\n")
+                    for ext, qtd in estatisticas.items():
+                        relatorio.write(f" - {ext.upper()}: {qtd} ficheiros\n")
+
+                # Mostrar no terminal
+                print(f"\n📊 RESUMO ESTATÍSTICO:")
+                print(f"   🔹 Analisado: {mb_total:.2f} MB")
+                print(f"   🔹 Recuperado: {mb_recup:.2f} MB")
+                print(f"   🔸 Dados Órfãos: {mb_orfaos:.2f} MB")
+                print(f"   📝 Foi criado um 'Relatorio_Recuperacao.txt' na pasta de resultados.")
+
     except Exception as e: print(f"[Erro Crítico]: {e}")
 
-# --- PONTO DE ENTRADA DO PROGRAMA ---
 if __name__ == "__main__":
     print("=====================================================")
     print("      FERRAMENTA DE RECUPERAÇÃO DE DADOS APAGADOS    ")
     print("=====================================================")
-    
-    print("\n[ DICA ] Exemplo de dispositivo no Mac: /dev/rdisk4")
     dispositivo_alvo = input("\n👉 Escreva o identificador da pen: ").strip()
     
     nome_imagem = "copia_temporaria.img"
@@ -161,14 +168,6 @@ if __name__ == "__main__":
     destino_escolhido = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dados_recuperados")
     
     if dispositivo_alvo:
-        print("\n[Aviso] Vai ser pedida a password do seu Mac para autorizar a cópia.")
-        
         sucesso_clone = criar_imagem_disco(dispositivo_alvo, caminho_imagem_temp)
-        
-        if sucesso_clone:
-            motor_recuperacao(caminho_imagem_temp, destino_escolhido)
-            print("\n[*] Processo completo concluído. Verifique as subpastas em 'dados_recuperados'.")
-        else:
-            print("\n[!] Recuperação cancelada.")
-    else:
-        print("[!] Erro: Nenhum dispositivo introduzido.")
+        if sucesso_clone: motor_recuperacao(caminho_imagem_temp, destino_escolhido)
+    else: print("[!] Erro: Nenhum dispositivo introduzido.")
