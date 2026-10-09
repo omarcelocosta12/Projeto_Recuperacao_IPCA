@@ -1,49 +1,41 @@
-# 🛠️ Recuperador de Ficheiros (File Carving)
+Esta ferramenta recupera ficheiros apagados de pens e discos,
+criando primeiro uma copia fisica segura.
 
-Projeto desenvolvido no âmbito da unidade curricular de **Segurança e Proteção de Dados para Sistemas de Informação** no Instituto Politécnico do Cávado e do Ave (IPCA).
+REQUISITOS:
 
-Uma ferramenta de recuperação de dados em bruto (File Carving) desenhada para macOS. Todo o motor de extração, clonagem de segurança e interface gráfica de terminal estão **consolidados num único ficheiro Python**, tornando a ferramenta portátil e fácil de auditar.
+Computador: Mac (macOS)
 
-## 🚀 Como Funciona
+Password de administrador do Mac
 
-Em vez de depender do sistema operativo (que pode classificar uma pen como "ilegível"), este script lê a superfície física do disco à procura das assinaturas originais dos ficheiros (como JPG, PDF e MP4) e resgata-os de forma autónoma.
+PASSO A PASSO (Apenas 3 comandos)
 
-*   **Arquitetura *Standalone*:** Todo o código (clonagem, leitura de memória `mmap` e animações) vive no ficheiro `recuperador.py`.
-*   **Cópia de Segurança Obrigatória:** Para garantir a integridade do dispositivo original, o script invoca o comando `dd` do macOS para criar um clone físico provisório antes de iniciar a extração.
-*   **Feedback Visual:** Utiliza sinais de sistema (`SIGINFO`) integrados numa *Thread* paralela para animar o progresso no terminal em tempo real.
+LIGUE A PEN E DESCUBRA O SEU NOME
+Abra o Terminal do Mac e escreva o comando abaixo, seguido de Enter:
 
-## ⚙️ Requisitos
-*   **Sistema Operativo:** macOS
-*   **Ambiente:** Python 3 (sem necessidade de bibliotecas externas)
-*   **Permissões:** Privilégios de Administrador (para autorizar a leitura a baixo nível do dispositivo).
-
-## 💻 Guia de Utilização Rápida
-
-**1. Descobrir o identificador do seu disco**
-Ligue a pen ou disco ao Mac. Abra o Terminal e escreva:
-```bash
 diskutil list
 
+(Vai aparecer uma lista. Procure a sua pen pelo tamanho e anote o
+identificador na coluna da direita. Exemplo: /dev/rdisk4)
 
-(Anote o identificador, por exemplo: /dev/rdisk4)
+INICIE O PROGRAMA
+No terminal, va para a pasta onde guardou o script 'recuperador.py'
+e escreva o comando abaixo, seguido de Enter:
 
-2. Executar a Ferramenta
-Navegue até à pasta onde guardou o script único e execute:
-
-Bash
 python3 recuperador.py
-3. Iniciar a Extração
-O programa pedirá o identificador do disco.
 
-Plaintext
-👉 Escreva o identificador da pen: /dev/rdisk4
-A partir daqui, introduza a password do Mac (quando solicitada) e o processo decorre de forma totalmente automática.
+AUTORIZE A RECUPERACAO
+O programa vai pedir o nome da pen. Escreva o identificador que anotou no Passo 1:
 
-📁 Resultados da Recuperação
-No final do processo, tudo fica organizado na mesma pasta onde está o seu script:
+Exemplo: /dev/rdisk4
 
-Pasta /dados_recuperados/: Contém todos os ficheiros resgatados (fotografias, documentos, vídeos).
+O terminal vai pedir a password do seu Mac. Escreva a password
+(nao vao aparecer letras no ecra, e normal) e prima Enter.
 
-Ficheiro copia_temporaria.img: O clone físico do seu disco. Pode (e deve) apagar este ficheiro grandalhão assim que confirmar que os seus dados foram recuperados com sucesso.
+O QUE ACONTECE DEPOIS?
+O programa vai trabalhar sozinho. Quando terminar, va a pasta onde
+guardou o script. Vai encontrar la:
 
-Nota sobre Vídeos (MP4): Devido à técnica de extração cega, os vídeos recuperados terão um tamanho fixo (ex: 50MB). Recomenda-se a visualização dos mesmos com o VLC Media Player.
+Uma pasta chamada 'dados_recuperados' (com as suas fotos e documentos).
+
+Um ficheiro chamado 'copia_temporaria.img' (o clone da pen. Pode
+apagar este ficheiro quando ja tiver confirmado que recuperou tudo).
