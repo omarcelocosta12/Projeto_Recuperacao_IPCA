@@ -22,9 +22,6 @@ ASSINATURAS = {
 
 # --- FUNÇÃO 1: Animação e Progresso ---
 def monitorizar_progresso(processo_dd, evento_conclusao):
-    """
-    Função paralela que anima um trator no terminal e pede atualizações de progresso ao sistema.
-    """
     contador_ciclos = 0
     pos = 0
     direcao = 1
@@ -55,9 +52,6 @@ def monitorizar_progresso(processo_dd, evento_conclusao):
 
 # --- FUNÇÃO 2: Criar a Cópia Física ---
 def criar_imagem_disco(dispositivo, caminho_imagem):
-    """
-    Cria uma cópia 1:1 do disco para leitura segura.
-    """
     print(f"\n[*] PASSO 1: Preparar o disco (Criar Cópia Segura)")
     print(f"[-] A ler o dispositivo: {dispositivo}")
     print(f"[-] Destino: {caminho_imagem}\n")
@@ -101,12 +95,9 @@ def criar_imagem_disco(dispositivo, caminho_imagem):
         print(f"\n[Erro Crítico na Cópia]: {e}")
         return False
 
-# --- FUNÇÃO 3: Extrair os Ficheiros ---
+# --- FUNÇÃO 3: Extrair os Ficheiros e Organizar em Subpastas ---
 def motor_recuperacao(caminho_imagem, pasta_saida):
-    """
-    Analisa a imagem e extrai ficheiros apagados.
-    """
-    print(f"\n[*] PASSO 2: Motor de Recuperação de Ficheiros...")
+    print(f"\n[*] PASSO 2: Motor de Recuperação e Organização...")
     print(f"[*] A analisar: {caminho_imagem}\n")
     
     os.makedirs(pasta_saida, exist_ok=True)
@@ -116,6 +107,11 @@ def motor_recuperacao(caminho_imagem, pasta_saida):
             with mmap.mmap(disco.fileno(), length=0, access=mmap.ACCESS_READ) as disco_virtual:
                 for extensao, marcadores in ASSINATURAS.items():
                     print(f"[-] A procurar ficheiros do tipo .{extensao.upper()}...")
+                    
+                    # Cria a subpasta específica para este formato (ex: dados_recuperados/PDF)
+                    subpasta = os.path.join(pasta_saida, extensao.upper())
+                    os.makedirs(subpasta, exist_ok=True)
+                    
                     cursor = 0
                     recuperados = 0
                     
@@ -139,14 +135,15 @@ def motor_recuperacao(caminho_imagem, pasta_saida):
                         if tamanho_ficheiro > TAMANHO_MAXIMO_BYTES:
                             cursor = inicio_idx + len(marcadores["inicio"]); continue
                             
-                        nome_ficheiro = os.path.join(pasta_saida, f"recuperado_{recuperados}.{extensao}")
+                        # Guarda o ficheiro DENTRO da subpasta correspondente
+                        nome_ficheiro = os.path.join(subpasta, f"recuperado_{recuperados}.{extensao}")
                         with open(nome_ficheiro, "wb") as f_saida:
                             f_saida.write(disco_virtual[inicio_idx:fim_idx])
                             
                         recuperados += 1
                         cursor = fim_idx 
                         
-                    print(f"    -> {recuperados} ficheiro(s) recuperado(s).")
+                    print(f"    -> {recuperados} ficheiro(s) guardado(s) na pasta '{extensao.upper()}'.")
     except FileNotFoundError: print(f"[Erro] A cópia '{caminho_imagem}' não foi encontrada.")
     except Exception as e: print(f"[Erro Crítico]: {e}")
 
@@ -170,7 +167,7 @@ if __name__ == "__main__":
         
         if sucesso_clone:
             motor_recuperacao(caminho_imagem_temp, destino_escolhido)
-            print("\n[*] Processo completo concluído. Verifique a pasta 'dados_recuperados'.")
+            print("\n[*] Processo completo concluído. Verifique as subpastas em 'dados_recuperados'.")
         else:
             print("\n[!] Recuperação cancelada.")
     else:
